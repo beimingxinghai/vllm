@@ -166,13 +166,17 @@ __global__ void reshape_and_cache_kernel(
   const int64_t block_idx = slot_idx / block_size;
   const int64_t block_offset = slot_idx % block_size;
 
+  // 待处理的计算量，对应block中线程数量
   const int n = num_heads * head_size;
+  // 每个线程需要计算数据量大小，如果分配block较小，会处理多个
   for (int i = threadIdx.x; i < n; i += blockDim.x) {
     const int64_t src_key_idx = token_idx * key_stride + i;
     const int64_t src_value_idx = token_idx * value_stride + i;
 
+    // 计算该线程需要处理的数据所在head,及在head size中的offset
     const int head_idx = i / head_size;
     const int head_offset = i % head_size;
+    // 如果以x作为基本数据单元，计算数据地址
     const int x_idx = head_offset / x;
     const int x_offset = head_offset % x;
 
@@ -192,6 +196,7 @@ __global__ void reshape_and_cache_kernel(
 
 } // namespace vllm
 
+// 将连续内存中 key/value数据，按照slot_mapping中的映射关系，搬运到离散内存中
 void reshape_and_cache(
   torch::Tensor& key,           // [num_tokens, num_heads, head_size]
   torch::Tensor& value,         // [num_tokens, num_heads, head_size]
@@ -208,7 +213,9 @@ void reshape_and_cache(
   int key_stride = key.stride(0);
   int value_stride = value.stride(0);
 
+  // 需要操作的token数量
   dim3 grid(num_tokens);
+  // 每个block数据量，512即每个block中线程数量最大值
   dim3 block(std::min(num_heads * head_size, 512));
   const at::cuda::OptionalCUDAGuard device_guard(device_of(key));
   const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
@@ -296,11 +303,14 @@ __global__ void gather_cached_kv_kernel_optimized(
     const int block_idx = slot_idx / block_size;
     const int block_offset = slot_idx % block_size;
 
+    // 需要计算的数据量
     const int dim = num_heads * head_size;
+    // dim必须是4的倍数
     assert(dim % 4 == 0);  // this is true for known use cases
     const int unroll_factor = 4;
+    // 每块切分的大小
     const int unrolled_dim = dim / unroll_factor;
-
+    // 如果blockDim.x为num_heads * head_size
     for (int i = threadIdx.x; i < unrolled_dim; i += blockDim.x)
     {
         int tgt_key_indices[unroll_factor];
@@ -311,13 +321,18 @@ __global__ void gather_cached_kv_kernel_optimized(
         scalar_t values_to_store[unroll_factor];
 
         #pragma unroll
+        // 每个线程展开4次
+        // [num_blocks, num_heads, head_size/x, block_size, x]
+        // [num_blocks, num_heads, head_size, block_size]
         for (int j = 0; j < unroll_factor; ++j)
         {
+            // 计算[head_num, head_size]中整体偏移量
             int index = i + j * unrolled_dim;
 
+            // 计算dst地址
             const int tgt_key_idx = token_idx * key_stride + index;
             const int tgt_value_idx = token_idx * value_stride + index;
-
+            // 计算src地址
             const int head_idx = index / head_size;
             const int head_offset = index % head_size;
             const int x_idx = head_offset / x;
@@ -332,6 +347,7 @@ __global__ void gather_cached_kv_kernel_optimized(
                                       + head_idx * head_size * block_size
                                       + head_offset * block_size
                                       + block_offset;
+
 
             tgt_key_indices[j] = tgt_key_idx;
             tgt_value_indices[j] = tgt_value_idx;
@@ -353,6 +369,7 @@ __global__ void gather_cached_kv_kernel_optimized(
 
 } // namespace vllm
 
+// 将key/value cache中离散的数据按照slot_mapping查表，重新组织成连续的数据
 void gather_cached_kv(
   torch::Tensor& key,           // [out] [num_tokens, num_heads, head_size]
   torch::Tensor& value,         // [out] [num_tokens, num_heads, head_size]

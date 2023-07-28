@@ -61,23 +61,32 @@ def ref_single_query_cached_kv_attention(
 
     block_tables = block_tables.cpu().tolist()
     context_lens = context_lens.cpu().tolist()
+    # 对于每个输入的seq的token，都有一个对应的block table，用于寻址
     for i in range(num_seqs):
+      # q 扩展为 (1, num_heads, head_size)
         q = query[i].unsqueeze(0)
         block_table = block_tables[i]
+        # context_len 是当前输入的seq的token对应的已用block table的长度
         context_len = int(context_lens[i])
 
         keys = []
         values = []
+        # 对于每个上文的token，都有一个对应的block table，用于寻址
         for j in range(context_len):
+            # block_number 是当前上文的token对应的block table中的block编号
             block_number = int(block_table[j // block_size])
+            # block_offset 是当前上文的token对应的block table中的block内的offset
             block_offset = j % block_size
 
+            # 第几个block，所有head, 所有head_size, block内的offset, 所有自定义数据x
             k = key_cache[block_number, :, :, block_offset, :]
             k = k.reshape(num_kv_heads, head_size)
             keys.append(k)
 
+            # 第几个block，所有head, 所有head_size, block内的offset的数
             v = value_cache[block_number, :, :, block_offset]
             values.append(v)
+        # tensor拼接在一起
         keys = torch.stack(keys, dim=0)
         values = torch.stack(values, dim=0)
         if num_queries_per_kv > 1:

@@ -109,7 +109,9 @@ def test_reshape_and_cache(
     torch.cuda.manual_seed(seed)
     gpu_id = f"cuda:{device}"
     # Create a random slot mapping.
+    # block分配的总token数量
     num_slots = block_size * num_blocks
+    # 从num_slots中随机抽取num个数，每个数代表一个token的slot位置，即偏移值
     slot_mapping = random.sample(range(num_slots), num_tokens)
     slot_mapping = torch.tensor(slot_mapping, dtype=torch.long, device=gpu_id)
 
@@ -122,6 +124,7 @@ def test_reshape_and_cache(
     _, key, value = qkv.unbind(dim=1)
 
     # Create the KV caches.
+    # 聚合搬运的地址
     key_caches, value_caches = kv_cache_factory(num_blocks, block_size, 1,
                                                 num_heads, head_size, dtype,
                                                 seed, gpu_id)

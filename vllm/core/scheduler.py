@@ -367,6 +367,7 @@ class Scheduler:
         scheduler_outputs = self._schedule()
 
         # Create input data structures.
+        # 从seq_groups中获取seq_id和seq_data，对应的是一个prompt生成的不同sequence数据
         seq_group_metadata_list: List[SequenceGroupMetadata] = []
         for seq_group in scheduler_outputs.scheduled_seq_groups:
             seq_data: Dict[int, SequenceData] = {}

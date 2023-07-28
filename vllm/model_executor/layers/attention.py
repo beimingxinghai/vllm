@@ -51,6 +51,11 @@ class PagedAttention(nn.Module):
             alibi_slopes = torch.tensor(alibi_slopes, dtype=torch.float32)
         self.register_buffer("alibi_slopes", alibi_slopes, persistent=False)
 
+        # Supports multi-query and grouped-query attention (MQA/GQA) by passing in KV with fewer heads
+        # than Q. Note that the number of heads in KV must be divisible by the number of heads in Q.
+        # For example, if Q has 6 heads and K, V have 2 heads, head 0, 1, 2 of Q will attention to head
+        # 0 of K, V, and head 3, 4, 5 of Q will attention to head 1 of K, V.  
+        # 对MQA与GQA的支持
         assert self.num_heads % self.num_kv_heads == 0
         self.num_queries_per_kv = self.num_heads // self.num_kv_heads
 
